@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Speech Disease Detection</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial;
+            background: #0f172a;
+            color: white;
+            text-align: center;
+        }
+
+        .card {
+            background: #1e293b;
+            padding: 25px;
+            border-radius: 15px;
+            width: 70%;
+            margin: auto;
+            margin-top: 30px;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.5);
+        }
+
+        button {
+            padding: 12px 20px;
+            margin: 10px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        #startBtn { background: #22c55e; color: white; }
+        #stopBtn { background: #ef4444; color: white; }
+
+        .status {
+            margin-top: 15px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .recording { color: #22c55e; }
+        .processing { color: orange; }
+        .done { color: #3b82f6; }
+
+        .box {
+            margin-top: 20px;
+            background: #334155;
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        img {
+            margin-top: 20px;
+            width: 400px;
+            border-radius: 10px;
+            border: 2px solid #475569;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>🎤 Speech Disease Detection</h1>
+
+<div class="card">
+
+    <button id="startBtn">Start Recording</button>
+    <button id="stopBtn">Stop & Predict</button>
+
+    <div id="status" class="status">Status: Idle</div>
+
+    <div class="box">
+        <h2>Prediction: <span id="prediction">---</span></h2>
+        <h3>Confidence: <span id="confidence">---</span>%</h3>
+    </div>
+
+    <h3>Spectrogram</h3>
+    <img id="spectrogram" src="" style="display:none;">
+
+    <h3>Accuracy Graph</h3>
+    <canvas id="accuracyChart"></canvas>
+
+</div>
+
+<script>
+let mediaRecorder;
+let audioChunks = [];
+
+// START RECORDING
+document.getElementById("startBtn").onclick = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.start();
+    audioChunks = [];
+
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+
+    document.getElementById("status").innerText = "Status: Recording...";
+    document.getElementById("status").className = "status recording";
+};
+
+// STOP + PREDICT
+document.getElementById("stopBtn").onclick = () => {
+
+    if (!mediaRecorder) return;
+
+    document.getElementById("status").innerText = "Status: Processing...";
+    document.getElementById("status").className = "status processing";
+
+    mediaRecorder.stop();
+
+    mediaRecorder.onstop = async () => {
+
+        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+
+        const formData = new FormData();
+        formData.append("file", audioBlob, "recording.wav");
+
+        const response = await fetch("/predict", {
+            method: "POST",
+            body: formData
+        });
+
+        const data = await response.json();
+
+        document.getElementById("prediction").innerText = data.prediction;
+        document.getElementById("confidence").innerText = data.confidence;
+
+        // ✅ SHOW SPECTROGRAM (FIXED)
+        const img = document.getElementById("spectrogram");
+        img.style.display = "block";
+        img.src = "/static/" + data.spectrogram + "?t=" + new Date().getTime();
+
+        document.getElementById("status").innerText = "Status: Done";
+        document.getElementById("status").className = "status done";
+    };
+};
+
+
+// LOAD ACCURACY GRAPH
+window.onload = async () => {
+    const res = await fetch("/accuracy");
+    const data = await res.json();
+
+    const epochs = data.accuracy.map((_, i) => i + 1);
+
+    new Chart(document.getElementById("accuracyChart"), {
+        type: "line",
+        data: {
+            labels: epochs,
+            datasets: [
+                {
+                    label: "Training Accuracy",
+                    data: data.accuracy,
+                    borderWidth: 2
+                },
+                {
+                    label: "Validation Accuracy",
+                    data: data.val_accuracy,
+                    borderWidth: 2
+                }
+            ]
+        },
+        options: {
+            plugins: {
+                legend: { labels: { color: "white" } }
+            },
+            scales: {
+                x: { ticks: { color: "white" } },
+                y: { ticks: { color: "white" } }
+            }
+        }
+    });
+};
+</script>
+
+</body>
+</html>
